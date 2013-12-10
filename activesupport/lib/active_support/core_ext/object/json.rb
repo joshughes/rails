@@ -112,8 +112,17 @@ class BigDecimal
   # if the other end knows by contract that the data is supposed to be a
   # BigDecimal, it still has the chance to post-process the string and get the
   # real value.
+  #
+  # Use <tt>ActiveSupport.encode_big_decimal_as_string = true</tt> to
+  # override this behavior.
   def as_json(options = nil) #:nodoc:
-    finite? ? to_s : nil
+    puts "This is #{finite?}"
+    if finite?
+      puts "Here I am "
+      ActiveSupport.encode_big_decimal_as_string ? to_s : self
+    else
+      nil
+    end
   end
 end
 
