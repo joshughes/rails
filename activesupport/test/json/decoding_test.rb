@@ -71,9 +71,9 @@ class TestJSONDecoding < ActiveSupport::TestCase
         end
         ActiveSupport.parse_json_times = prev
       end
-  end
+    end
 
-   test "json decodes time json with time parsing disabled with the #{backend} backend" do
+    test "json decodes time json with time parsing disabled with the #{backend} backend" do
       prev = ActiveSupport.parse_json_times
       ActiveSupport.parse_json_times = false
       expected = {"a" => "2007-01-01 01:12:34 Z"}
