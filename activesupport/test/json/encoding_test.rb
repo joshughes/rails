@@ -1,5 +1,4 @@
 # encoding: utf-8
-require 'securerandom'
 require 'abstract_unit'
 require 'active_support/core_ext/string/inflections'
 require 'active_support/json'
@@ -13,17 +12,13 @@ class TestJSONEncoding < ActiveSupport::TestCase
 
   class Hashlike
     def to_hash
-      { :foo => "hello", :bar => "world" }
+      { :a => 1 }
     end
   end
 
   class Custom
-    def initialize(serialized)
-      @serialized = serialized
-    end
-
-    def as_json(options = nil)
-      @serialized
+    def as_json(options)
+      'custom'
     end
   end
 
@@ -33,25 +28,6 @@ class TestJSONEncoding < ActiveSupport::TestCase
     def as_json(options={})
       options[:only] = %w(foo bar)
       super(options)
-    end
-  end
-
-  class OptionsTest
-    def as_json(options = :default)
-      options
-    end
-  end
-
-  class HashWithAsJson < Hash
-    attr_accessor :as_json_called
-
-    def initialize(*)
-      super
-    end
-
-    def as_json(options={})
-      @as_json_called = true
-      super
     end
   end
 
@@ -69,8 +45,8 @@ class TestJSONEncoding < ActiveSupport::TestCase
   StringTests   = [[ 'this is the <string>',     %("this is the \\u003cstring\\u003e")],
                    [ 'a "string" with quotes & an ampersand', %("a \\"string\\" with quotes \\u0026 an ampersand") ],
                    [ 'http://test.host/posts/1', %("http://test.host/posts/1")],
-                   [ "Control characters: \x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\u2028\u2029",
-                     %("Control characters: \\u0000\\u0001\\u0002\\u0003\\u0004\\u0005\\u0006\\u0007\\b\\t\\n\\u000b\\f\\r\\u000e\\u000f\\u0010\\u0011\\u0012\\u0013\\u0014\\u0015\\u0016\\u0017\\u0018\\u0019\\u001a\\u001b\\u001c\\u001d\\u001e\\u001f\\u2028\\u2029") ]]
+                   [ "Control characters: \x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f",
+                     %("Control characters: \\u0000\\u0001\\u0002\\u0003\\u0004\\u0005\\u0006\\u0007\\b\\t\\n\\u000b\\f\\r\\u000e\\u000f\\u0010\\u0011\\u0012\\u0013\\u0014\\u0015\\u0016\\u0017\\u0018\\u0019\\u001a\\u001b\\u001c\\u001d\\u001e\\u001f") ]]
 
   ArrayTests    = [[ ['a', 'b', 'c'],          %([\"a\",\"b\",\"c\"])          ],
                    [ [1, 'a', :b, nil, false], %([1,\"a\",\"b\",null,false]) ]]
@@ -84,14 +60,8 @@ class TestJSONEncoding < ActiveSupport::TestCase
                    [ :"a b", %("a b")  ]]
 
   ObjectTests   = [[ Foo.new(1, 2), %({\"a\":1,\"b\":2}) ]]
-  HashlikeTests = [[ Hashlike.new, %({\"bar\":\"world\",\"foo\":\"hello\"}) ]]
-  CustomTests   = [[ Custom.new("custom"), '"custom"' ],
-                   [ Custom.new(nil), 'null' ],
-                   [ Custom.new(:a), '"a"' ],
-                   [ Custom.new([ :foo, "bar" ]), '["foo","bar"]' ],
-                   [ Custom.new({ :foo => "hello", :bar => "world" }), '{"bar":"world","foo":"hello"}' ],
-                   [ Custom.new(Hashlike.new), '{"bar":"world","foo":"hello"}' ],
-                   [ Custom.new(Custom.new(Custom.new(:a))), '"a"' ]]
+  HashlikeTests = [[ Hashlike.new, %({\"a\":1}) ]]
+  CustomTests   = [[ Custom.new, '"custom"' ]]
 
   RegexpTests   = [[ /^a/, '"(?-mix:^a)"' ], [/^\w{1,2}[a-z]+/ix, '"(?ix-m:^\\\\w{1,2}[a-z]+)"']]
 
@@ -126,11 +96,11 @@ class TestJSONEncoding < ActiveSupport::TestCase
     end
   end
 
-  def test_process_status
-    # There doesn't seem to be a good way to get a handle on a Process::Status object without actually
-    # creating a child process, hence this to populate $?
-    system("not_a_real_program_#{SecureRandom.hex}")
-    assert_equal %({"exitstatus":#{$?.exitstatus},"pid":#{$?.pid}}), ActiveSupport::JSON.encode($?)
+  def test_json_variable
+    assert_deprecated do
+      assert_equal ActiveSupport::JSON::Variable.new('foo'), 'foo'
+      assert_equal ActiveSupport::JSON::Variable.new('alert("foo")'), 'alert("foo")'
+    end
   end
 
   def test_hash_encoding
@@ -175,25 +145,19 @@ class TestJSONEncoding < ActiveSupport::TestCase
   def test_exception_raised_when_encoding_circular_reference_in_array
     a = [1]
     a << a
-    assert_deprecated do
-      assert_raise(ActiveSupport::JSON::Encoding::CircularReferenceError) { ActiveSupport::JSON.encode(a) }
-    end
+    assert_raise(ActiveSupport::JSON::Encoding::CircularReferenceError) { ActiveSupport::JSON.encode(a) }
   end
 
   def test_exception_raised_when_encoding_circular_reference_in_hash
     a = { :name => 'foo' }
     a[:next] = a
-    assert_deprecated do
-      assert_raise(ActiveSupport::JSON::Encoding::CircularReferenceError) { ActiveSupport::JSON.encode(a) }
-    end
+    assert_raise(ActiveSupport::JSON::Encoding::CircularReferenceError) { ActiveSupport::JSON.encode(a) }
   end
 
   def test_exception_raised_when_encoding_circular_reference_in_hash_inside_array
     a = { :name => 'foo', :sub => [] }
     a[:sub] << a
-    assert_deprecated do
-      assert_raise(ActiveSupport::JSON::Encoding::CircularReferenceError) { ActiveSupport::JSON.encode(a) }
-    end
+    assert_raise(ActiveSupport::JSON::Encoding::CircularReferenceError) { ActiveSupport::JSON.encode(a) }
   end
 
   def test_hash_key_identifiers_are_always_quoted
@@ -237,31 +201,6 @@ class TestJSONEncoding < ActiveSupport::TestCase
       }
       ActiveSupport::JSON.encode(hash)
     end
-  end
-
-  def test_hash_like_with_options
-    h = Hashlike.new
-    json = h.to_json :only => [:foo]
-
-    assert_equal({"foo"=>"hello"}, JSON.parse(json))
-  end
-
-  def test_object_to_json_with_options
-    obj = Object.new
-    obj.instance_variable_set :@foo, "hello"
-    obj.instance_variable_set :@bar, "world"
-    json = obj.to_json :only => ["foo"]
-
-    assert_equal({"foo"=>"hello"}, JSON.parse(json))
-  end
-
-  def test_struct_to_json_with_options
-    struct = Struct.new(:foo, :bar).new
-    struct.foo = "hello"
-    struct.bar = "world"
-    json = struct.to_json :only => [:foo]
-
-    assert_equal({"foo"=>"hello"}, JSON.parse(json))
   end
 
   def test_hash_should_pass_encoding_options_to_children_in_as_json
@@ -338,34 +277,14 @@ class TestJSONEncoding < ActiveSupport::TestCase
     assert_equal(%([{"address":{"city":"London"}},{"address":{"city":"Paris"}}]), json)
   end
 
-  def test_hash_to_json_should_not_keep_options_around
+  def test_to_json_should_not_keep_options_around
     f = CustomWithOptions.new
     f.foo = "hello"
     f.bar = "world"
 
     hash = {"foo" => f, "other_hash" => {"foo" => "other_foo", "test" => "other_test"}}
     assert_equal({"foo"=>{"foo"=>"hello","bar"=>"world"},
-                  "other_hash" => {"foo"=>"other_foo","test"=>"other_test"}}, ActiveSupport::JSON.decode(hash.to_json))
-  end
-
-  def test_array_to_json_should_not_keep_options_around
-    f = CustomWithOptions.new
-    f.foo = "hello"
-    f.bar = "world"
-
-    array = [f, {"foo" => "other_foo", "test" => "other_test"}]
-    assert_equal([{"foo"=>"hello","bar"=>"world"},
-                  {"foo"=>"other_foo","test"=>"other_test"}], ActiveSupport::JSON.decode(array.to_json))
-  end
-
-  def test_hash_as_json_without_options
-    json = { foo: OptionsTest.new }.as_json
-    assert_equal({"foo" => :default}, json)
-  end
-
-  def test_array_as_json_without_options
-    json = [ OptionsTest.new ].as_json
-    assert_equal([:default], json)
+                  "other_hash" => {"foo"=>"other_foo","test"=>"other_test"}}, JSON.parse(hash.to_json))
   end
 
   def test_struct_encoding
@@ -390,51 +309,30 @@ class TestJSONEncoding < ActiveSupport::TestCase
     assert_equal({"name" => "David",
                   "sub" => {
                     "name" => "David",
-                    "date" => "2010-01-01" }}, ActiveSupport::JSON.decode(json_custom))
+                    "date" => "2010-01-01" }}, JSON.parse(json_custom))
 
     assert_equal({"name" => "David", "email" => "sample@example.com"},
-                 ActiveSupport::JSON.decode(json_strings))
+                 JSON.parse(json_strings))
 
     assert_equal({"name" => "David", "date" => "2010-01-01"},
-                 ActiveSupport::JSON.decode(json_string_and_date))
+                 JSON.parse(json_string_and_date))
+  end
+
+  def test_opt_out_big_decimal_string_serialization
+    big_decimal = BigDecimal('2.5')
+
+    begin
+      ActiveSupport.encode_big_decimal_as_string = false
+      assert_equal big_decimal.to_s, big_decimal.to_json
+    ensure
+      ActiveSupport.encode_big_decimal_as_string = true
+    end
   end
 
   def test_nil_true_and_false_represented_as_themselves
     assert_equal nil,   nil.as_json
     assert_equal true,  true.as_json
     assert_equal false, false.as_json
-  end
-
-  def test_json_gem_dump_by_passing_active_support_encoder
-    h = HashWithAsJson.new
-    h[:foo] = "hello"
-    h[:bar] = "world"
-
-    assert_equal %({"foo":"hello","bar":"world"}), JSON.dump(h)
-    assert_nil h.as_json_called
-  end
-
-  def test_json_gem_generate_by_passing_active_support_encoder
-    h = HashWithAsJson.new
-    h[:foo] = "hello"
-    h[:bar] = "world"
-
-    assert_equal %({"foo":"hello","bar":"world"}), JSON.generate(h)
-    assert_nil h.as_json_called
-  end
-
-  def test_json_gem_pretty_generate_by_passing_active_support_encoder
-    h = HashWithAsJson.new
-    h[:foo] = "hello"
-    h[:bar] = "world"
-
-    assert_equal <<EXPECTED.chomp, JSON.pretty_generate(h)
-{
-  "foo": "hello",
-  "bar": "world"
-}
-EXPECTED
-    assert_nil h.as_json_called
   end
 
   protected
